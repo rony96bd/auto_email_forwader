@@ -1,0 +1,36 @@
+# Email Router Systemd Service File
+# লিনাক্স সিস্টেমে স্বয়ংক্রিয় চালানোর জন্য
+
+# Installation Instructions:
+# 1. Edit this file and replace placeholders
+# 2. sudo cp email-router.service /etc/systemd/system/
+# 3. sudo systemctl daemon-reload
+# 4. sudo systemctl enable email-router
+# 5. sudo systemctl start email-router
+# 6. sudo systemctl status email-router
+
+[Unit]
+Description=Email Routing Automation Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+Group=YOUR_USERNAME
+WorkingDirectory=/full/path/to/email-router
+Environment="PATH=/full/path/to/email-router/venv/bin"
+ExecStart=/full/path/to/email-router/venv/bin/python3 /full/path/to/email-router/email_router.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/full/path/to/email-router/email_router.log
+StandardError=append:/full/path/to/email-router/email_router_error.log
+
+[Install]
+WantedBy=multi-user.target
+
+# Example with actual paths:
+# User=john
+# WorkingDirectory=/home/john/email-router
+# Environment="PATH=/home/john/email-router/venv/bin"
+# ExecStart=/home/john/email-router/venv/bin/python3 /home/john/email-router/email_router.py

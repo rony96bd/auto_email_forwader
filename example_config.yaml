@@ -1,0 +1,72 @@
+# Example Email Routing System Configuration
+# এটি একটি উদাহরণ ফাইল - আপনার নিজের config.yaml ফাইল এডিট করুন
+
+# Your Email Account Settings
+email:
+  address: "your-email@gmail.com"     # আপনার ইমেইল এড্রেস
+  password: "your-app-password-here"  # Gmail App Password
+  
+  # IMAP Settings (for receiving emails)
+  imap_server: "imap.gmail.com"
+  imap_port: 993
+  
+  # SMTP Settings (for sending emails)
+  smtp_server: "smtp.gmail.com"
+  smtp_port: 587
+
+# Commercial Department Email Addresses
+# যে ইমেইলগুলো থেকে আসলে process করবে
+commercial_department:
+  emails:
+    - "commercial@yourcompany.com"
+    - "commercial.dept@yourcompany.com"
+    - "sales@yourcompany.com"
+
+# Accounts Department (CC recipient)
+accounts_department:
+  email: "accounts@yourcompany.com"
+
+# Routing Rules File
+routing_rules_file: "routing_rules.yaml"
+
+# Processing Options
+mark_as_read: true              # Process করা emails read মার্ক করবে
+mark_unmatched_as_read: false   # Match না করা emails read মার্ক করবে না
+
+# ---------------------------------------------------
+# Different Email Providers Configuration Examples
+# ---------------------------------------------------
+
+# For Gmail (Default):
+# 1. Go to: https://myaccount.google.com/security
+# 2. Enable 2-Step Verification
+# 3. Create App Password: https://myaccount.google.com/apppasswords
+# 4. Use that password above
+
+# For Outlook/Office365:
+# email:
+#   address: "your-email@outlook.com"
+#   password: "your-password"
+#   imap_server: "outlook.office365.com"
+#   smtp_server: "smtp.office365.com"
+#   imap_port: 993
+#   smtp_port: 587
+
+# For Yahoo Mail:
+# email:
+#   address: "your-email@yahoo.com"
+#   password: "your-app-password"
+#   imap_server: "imap.mail.yahoo.com"
+#   smtp_server: "smtp.mail.yahoo.com"
+#   imap_port: 993
+#   smtp_port: 587
+# Note: Yahoo also requires App Password
+
+# For Custom Email Server:
+# email:
+#   address: "your-email@yourdomain.com"
+#   password: "your-password"
+#   imap_server: "mail.yourdomain.com"
+#   smtp_server: "mail.yourdomain.com"
+#   imap_port: 993
+#   smtp_port: 587

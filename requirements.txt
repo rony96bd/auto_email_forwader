@@ -1,0 +1,12 @@
+# Email Routing System Requirements
+# Python 3.7 or higher required
+
+PyYAML>=6.0
+python-dateutil>=2.8.2
+
+# Optional: For better email handling
+email-validator>=2.0.0
+
+# Optional: For web-based management interface (future enhancement)
+# flask>=2.3.0
+# flask-cors>=4.0.0

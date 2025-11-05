@@ -1,0 +1,15 @@
+default_rule:
+  enabled: false
+  forward_to:
+  - general@insurance1.com
+  - general@insurance2.com
+  name: Default - All Insurance Companies
+rules:
+- conditions:
+    from_contains:
+    - r.ronycoc2015@gmail.com
+  enabled: true
+  forward_to:
+  - unoalamdangabanners@gmail.com
+  match_type: any
+  name: unoalamdangabanners@gmail.com Department
