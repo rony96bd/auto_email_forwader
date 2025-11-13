@@ -1,5 +1,6 @@
 # Email Routing System - Complete Documentation
 # স্বয়ংক্রিয় ইমেইল রাউটিং সিস্টেম - সম্পূর্ণ ডকুমেন্টেশন
+# EXE জেনারেট করা জন্য pyinstaller --name Email_Forwarder --onefile --noconsole --add-data "email_router.py;." --add-data "gui_app.py;." --add-data "license_manager.py;." gui_app.py
 
 ---
 
@@ -7,17 +8,18 @@
 
 1. [Introduction / পরিচিতি](#introduction)
 2. [Quick Start / দ্রুত শুরু](#quick-start)
-3. [Features / বৈশিষ্ট্য](#features)
-4. [Installation / ইনস্টলেশন](#installation)
-5. [Configuration / কনফিগারেশন](#configuration)
-6. [GUI Guide / GUI গাইড](#gui-guide)
-7. [Routing Rules / রাউটিং রুলস](#routing-rules)
-8. [Running the System / সিস্টেম চালু করা](#running)
-9. [Project Structure / প্রকল্পের গঠন](#project-structure)
-10. [Alternative Solutions / বিকল্প সমাধান](#alternatives)
-11. [Update History / আপডেটের ইতিহাস](#updates)
-12. [Troubleshooting / সমস্যা সমাধান](#troubleshooting)
-13. [FAQ / প্রশ্নোত্তর](#faq)
+3. [License Management / লাইসেন্স ম্যানেজমেন্ট](#license)
+4. [Features / বৈশিষ্ট্য](#features)
+5. [Installation / ইনস্টলেশন](#installation)
+6. [Configuration / কনফিগারেশন](#configuration)
+7. [GUI Guide / GUI গাইড](#gui-guide)
+8. [Routing Rules / রাউটিং রুলস](#routing-rules)
+9. [Running the System / সিস্টেম চালু করা](#running)
+10. [Project Structure / প্রকল্পের গঠন](#project-structure)
+11. [Alternative Solutions / বিকল্প সমাধান](#alternatives)
+12. [Update History / আপডেটের ইতিহাস](#updates)
+13. [Troubleshooting / সমস্যা সমাধান](#troubleshooting)
+14. [FAQ / প্রশ্নোত্তর](#faq)
 
 ---
 
@@ -127,6 +129,262 @@ python3 email_router.py --once
 # Continuous mode (default: check every 60 seconds)
 python3 email_router.py
 ```
+
+---
+
+## License Management / লাইসেন্স ম্যানেজমেন্ট {#license}
+
+The application requires a valid e-license. Every time the GUI or CLI starts, the system verifies your license online and refuses to run if the license is missing, expired, or tampering is detected.
+
+### Activation Steps / অ্যাক্টিভেশন ধাপ
+
+1. **Place your license key** inside a file named `license.key` (project root)  
+   অথবা `LICENSE_KEY` পরিবেশ পরিবর্তনশীল (environment variable) ব্যবহার করুন।
+2. **Remote file option:** `LICENSE_KEY_URL` সেট করুন (ডিফল্ট: `https://epagebd.com/license.key`)। অ্যাপটি ওই URL থেকে কনটেন্ট ডাউনলোড করে ব্যবহার করবে।
+3. (Optional) **Custom server endpoint:** set `LICENSE_SERVER_URL` if your licensing API is not `https://license.example.com/api/v1/verify`.
+4. Ensure the machine has internet access during startup.
+
+### Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `LICENSE_KEY` | Overrides the key stored in `license.key`. |
+| `LICENSE_KEY_URL` | Pulls the license key from a remote HTTP/HTTPS URL (defaults to `https://epagebd.com/license.key`). |
+| `LICENSE_SERVER_URL` | Points to your licensing API endpoint. |
+
+### How the Validation Works / কিভাবে ভেরিফাই হয়
+
+- The app collects a machine fingerprint (hostname, OS, MAC hash).  
+- It posts the following JSON to the licensing endpoint:
+
+```json
+{
+  "app_id": "auto-email-router",
+  "app_version": "1.0.0",
+  "license_key": "sha256-of-license-key",
+  "machine_fingerprint": "sha256-hash",
+  "timestamp": "2025-11-13T10:15:00+00:00"
+}
+```
+
+- The server replies with a signed payload containing status, expiry, and code hashes.  
+- The client verifies the HMAC-SHA256 signature, checks expiry, and compares the SHA256 hash of critical files (`email_router.py`, `gui_app.py`, `license_manager.py`). Any mismatch triggers a tamper alert.
+
+### Sample Response Payload
+
+```json
+{
+  "status": "active",
+  "app_id": "auto-email-router",
+  "allowed_versions": ["1.0.0"],
+  "expires_at": "2025-12-31T23:59:59Z",
+  "license_key_hash": "same-sha256-sent-by-client",
+  "code_hashes": {
+    "email_router.py": "sha256-hex",
+    "gui_app.py": "sha256-hex",
+    "license_manager.py": "sha256-hex"
+  },
+  "message": "License valid",
+  "signature": "base64-hmac-signature"
+}
+```
+
+### Generating the Signature / সিগনেচার তৈরির নিয়ম
+
+1. The server removes the `signature` field before signing.
+2. Serialize the JSON with sorted keys and compact separators.
+3. Sign using the shared secret `license-sys-secret-2025` (HMAC-SHA256) and Base64-encode the result.
+
+```python
+import base64
+import hashlib
+import hmac
+import json
+
+secret = b"license-sys-secret-2025"  # store securely on server side only
+payload = {**response_without_signature}
+message = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+signature = base64.b64encode(hmac.new(secret, message, hashlib.sha256).digest()).decode("utf-8")
+payload["signature"] = signature
+```
+
+⚠️ the secret must live **only** on the server. If you change the secret or update source code, remember to update the signature logic accordingly.
+
+### Computing Code Hashes / হ্যাশ কিভাবে করবেন
+
+Run the following command from the project root to calculate a SHA256 hash:
+
+```bash
+python - <<'PY'
+import hashlib
+from pathlib import Path
+for name in ["email_router.py", "gui_app.py", "license_manager.py"]:
+    path = Path(name)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    print(f"{name}: {digest}")
+PY
+```
+
+Use these values in the `code_hashes` map returned by the licensing server. If any of those files are edited locally, the hashes change and the application will stop with a tamper warning.
+
+### Offline Grace Window / অফলাইন মোড
+
+- Each successful validation is cached (encrypted with the signature) in `.license_cache.json`.
+- The cache expires after 6 hours. After that, the app must reach the licensing server again.
+- If the remote check fails but a fresh cache exists, the app runs and logs that it is in grace mode.
+
+### Failure Messages / ব্যর্থতার বার্তা
+
+- `License Expired` – লাইসেন্সের মেয়াদ শেষ। সার্ভার থেকে নতুন লাইসেন্স নিন।
+- `License validation failed` – Key mismatch, invalid response, বা ইন্টারনেট না থাকলে এই বার্তা আসতে পারে।
+- `Tampering detected` – প্রোগ্রামের মূল ফাইল পরিবর্তন করা হয়েছে। সার্ভিস চালু হবে না।
+
+### PHP লাইসেন্স সার্ভার উদাহরণ
+
+নিচের ধাপগুলো অনুসরণ করে আপনি নিজের PHP ভিত্তিক API তৈরি করতে পারেন যা লাইসেন্স যাচাই করে signed JSON ফিরিয়ে দেয়।
+
+#### 1. ফোল্ডার স্ট্রাকচার
+
+```
+license-server/
+├── public/
+│   └── index.php          # API এন্ট্রি পয়েন্ট (উদাহরণ নিচে)
+├── data/
+│   └── licenses.json      # সহজ ডেমো ডেটা (Production এ DB ব্যবহার করা উত্তম)
+└── bootstrap.php          # কমন ফাংশন ও কনফিগ
+```
+
+#### 2. কনফিগারেশন (bootstrap.php)
+
+```php
+<?php
+declare(strict_types=1);
+
+const LICENSE_SECRET = 'license-sys-secret-2025'; // সার্ভারে গোপন রাখবেন
+
+function json_response(array $data): void {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+function sign_payload(array $payload): string {
+    $message = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $sorted = json_decode($message, true, 512, JSON_THROW_ON_ERROR);
+    ksort($sorted);
+    $compact = json_encode($sorted, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    return base64_encode(hash_hmac('sha256', $compact, LICENSE_SECRET, true));
+}
+
+function load_licenses(): array {
+    $json = file_get_contents(__DIR__ . '/data/licenses.json');
+    return json_decode($json, true, 512, JSON_THROW_ON_ERROR);
+}
+```
+
+#### 3. উদাহরণ লাইসেন্স ডেটা (data/licenses.json)
+
+```json
+{
+  "c5b161...": {
+    "owner": "Demo Company",
+    "expires_at": "2025-12-31T23:59:59Z",
+    "allowed_versions": ["1.0.0"],
+    "machine_fingerprints": ["4a8e19..."]
+  }
+}
+```
+
+> বাস্তবে এই ডেটা MySQL/PostgreSQL ইত্যাদি ডাটাবেসে সংরক্ষণ করা উচিত। `license_key` সবসময় SHA256 hash আকারে রাখুন।
+
+#### 4. API এন্ট্রি পয়েন্ট (public/index.php)
+
+```php
+<?php
+declare(strict_types=1);
+
+require __DIR__ . '/../bootstrap.php';
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    exit;
+}
+
+$input = json_decode(file_get_contents('php://input'), true);
+if (!is_array($input)) {
+    json_response(build_error('invalid-payload', 'Malformed JSON request'));
+}
+
+$appId       = $input['app_id']             ?? null;
+$version     = $input['app_version']        ?? null;
+$keyHash     = $input['license_key']        ?? null;
+$fingerprint = $input['machine_fingerprint']?? null;
+
+if ($appId !== 'auto-email-router' || !$keyHash || !$fingerprint) {
+    json_response(build_error('invalid-request', 'Missing or invalid fields'));
+}
+
+$licenses = load_licenses();
+$license  = $licenses[$keyHash] ?? null;
+if (!$license) {
+    json_response(build_error('not-found', 'License key not found'));
+}
+
+if (!in_array($fingerprint, $license['machine_fingerprints'], true)) {
+    json_response(build_error('unauthorized-machine', 'Machine not authorized'));
+}
+
+$expires = new DateTimeImmutable($license['expires_at']);
+if (new DateTimeImmutable('now', new DateTimeZone('UTC')) >= $expires) {
+    json_response(build_error('expired', 'License expired', 'expired'));
+}
+
+$payload = [
+    'status'            => 'active',
+    'app_id'            => 'auto-email-router',
+    'allowed_versions'  => $license['allowed_versions'],
+    'expires_at'        => $license['expires_at'],
+    'license_key_hash'  => $keyHash,
+    'code_hashes'       => load_code_hashes(),
+    'message'           => 'License valid'
+];
+
+$payload['signature'] = sign_payload($payload);
+json_response($payload);
+
+function build_error(string $code, string $message, string $status = 'invalid'): array {
+    $payload = [
+        'status'            => $status,
+        'message'           => $message,
+        'error_code'        => $code,
+        'app_id'            => 'auto-email-router',
+        'allowed_versions'  => [],
+        'expires_at'        => '1970-01-01T00:00:00Z',
+        'license_key_hash'  => '',
+        'code_hashes'       => load_code_hashes()
+    ];
+    $payload['signature'] = sign_payload($payload);
+    return $payload;
+}
+
+function load_code_hashes(): array {
+    return [
+        'email_router.py'   => 'sha256-hex-value',
+        'gui_app.py'        => 'sha256-hex-value',
+        'license_manager.py'=> 'sha256-hex-value'
+    ];
+}
+```
+
+#### 5. ডেপ্লয়মেন্ট টিপস
+
+- **HTTPS বাধ্যতামূলক** – Let’s Encrypt বা হোস্টিং প্যানেল থেকে SSL সার্টিফিকেট ব্যবহার করুন।
+- **Rate limiting** – API-কে অপব্যবহার থেকে বাঁচাতে IP rate limit যোগ করুন।
+- **Logging & monitoring** – সফল/ব্যর্থ রিকোয়েস্ট লগ রাখুন।
+- **Key management** – `LICENSE_SECRET` কখনোই ক্লায়েন্টে বা Git রিপোতে কমিট করবেন না। পরিবেশ পরিবর্তনশীল (Environment variable) ব্যবহার করুন।
+- **কোড হ্যাশ আপডেট** – নতুন ভার্সন রিলিজ করলে `code_hashes`-এর SHA256 হ্যাশ আপডেট করুন, নাহলে ক্লায়েন্ট tamper error দেখাবে।
+
+এই ডেমো API আপনার নিজের লগিক, ডাটাবেস ও নিরাপত্তা নীতিমালা অনুযায়ী কাস্টমাইজ করুন। ক্লায়েন্ট অ্যাপ্লিকেশন চালু করার আগে `LICENSE_SERVER_URL` পরিবর্তন করে আপনার নতুন Endpoint সেট করুন (যেমন `https://epagebd.com/api/v1/license/verify`)।
 
 ---
 

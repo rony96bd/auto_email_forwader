@@ -18,10 +18,15 @@ chmod +x setup.sh && ./setup.sh
 setup.bat
 ```
 
-### 2. Configure
+### 2. Activate License
+Place your license key into `license.key` (project root) **or** set the `LICENSE_KEY` environment variable.  
+You can also host the key at `https://epagebd.com/license.key` (or set `LICENSE_KEY_URL` to your own URL) and the app will fetch it automatically.  
+If your licensing endpoint differs from the default, export `LICENSE_SERVER_URL`.
+
+### 3. Configure
 Edit `config.yaml` with your email settings.
 
-### 3. Run GUI
+### 4. Run GUI
 ```bash
 # Windows
 run_gui.bat
@@ -45,6 +50,7 @@ run_gui.bat
 - ✅ SMTP SSL/TLS support (Port 465 & 587)
 - ✅ Bengali keywords support
 - ✅ Email provider auto-detection
+- ✅ Online license validation with tamper detection
 
 ---
 
@@ -83,12 +89,15 @@ Includes:
 - Python 3.7+
 - Internet connection
 - Email account with IMAP/SMTP access
+- Valid license key issued for this product
 
 ---
 
 ## 📝 License
 
-Free and open source.
+Running the software requires an active e-license.  
+The application validates the license against the remote licensing service at startup and whenever processing begins.  
+If the license is missing, expired, or tampering is detected, the system stops and displays “License Expired”.
 
 ---
 

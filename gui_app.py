@@ -20,6 +20,7 @@ import logging
 
 # Import the email router
 from email_router import EmailRouter
+from license_manager import LicenseError, LicenseManager
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 class ModernGUI:
     """Modern GUI application for Email Router"""
     
-    def __init__(self, root):
+    def __init__(self, root, license_context=None):
         self.root = root
         self.root.title("Email Router")
         self.root.geometry("1200x800")
@@ -40,6 +41,8 @@ class ModernGUI:
         self.is_running = False
         self.config_path = 'config.yaml'
         self.rules_path = 'routing_rules.yaml'
+        self.license_context = license_context
+        self.license_status_message = None
         
         # Load configuration
         self.load_config()
@@ -50,6 +53,7 @@ class ModernGUI:
         
         # Start status monitoring
         self.update_status()
+        self._update_license_badge()
         
     def setup_ui(self):
         """Setup the user interface"""
@@ -127,6 +131,9 @@ class ModernGUI:
         self.create_rules_tab()
         self.create_logs_tab()
         
+        # Status bar at bottom (always visible)
+        self.create_status_bar(main_container)
+        
     def create_header(self, parent):
         """Create header with title and status"""
         # Modern gradient header
@@ -165,8 +172,10 @@ class ModernGUI:
         status_container.pack(side=tk.RIGHT, padx=25, pady=20)
         
         # Status card
-        status_card = tk.Frame(status_container, bg='#ffffff', relief=tk.FLAT, bd=0)
-        status_card.pack(side=tk.LEFT, padx=(0, 15))
+        status_card = tk.Frame(status_container, bg='#ffffff', relief=tk.FLAT, bd=0, width=130)
+        status_card.pack(side=tk.LEFT, padx=(0, 15), fill=tk.Y)
+        status_card.pack_propagate(False)
+        status_card.pack_propagate(False)
         
         self.status_indicator = tk.Label(
             status_card,
@@ -180,7 +189,7 @@ class ModernGUI:
         self.status_indicator.pack(side=tk.LEFT)
         
         status_text_frame = tk.Frame(status_card, bg='#ffffff')
-        status_text_frame.pack(side=tk.LEFT, padx=(0, 12), pady=8)
+        status_text_frame.pack(side=tk.LEFT, padx=(0, 12), pady=8, fill=tk.BOTH, expand=True)
         
         self.status_label = tk.Label(
             status_text_frame,
@@ -189,7 +198,18 @@ class ModernGUI:
             bg='#ffffff',
             fg=self.colors['fg']
         )
-        self.status_label.pack(anchor=tk.W)
+        self.status_label.pack(anchor=tk.W, fill=tk.X)
+        
+        self.license_label = tk.Label(
+            status_text_frame,
+            text=self._format_license_status(),
+            font=('Segoe UI', 9),
+            bg='#ffffff',
+            fg=self.colors['text_muted'],
+            wraplength=220,
+            justify=tk.LEFT
+        )
+        self.license_label.pack(anchor=tk.W, pady=(2, 0), fill=tk.X)
         
         # Modern control buttons
         control_frame = tk.Frame(status_container, bg=self.colors['primary_dark'])
@@ -229,6 +249,49 @@ class ModernGUI:
             state=tk.DISABLED
         )
         self.stop_btn.pack(side=tk.LEFT, padx=5)
+    
+    def create_status_bar(self, parent):
+        """Create status bar at bottom with license information"""
+        status_bar = tk.Frame(parent, bg=self.colors['bg_secondary'], height=35)
+        status_bar.pack(fill=tk.X, side=tk.BOTTOM, pady=(10, 0))
+        status_bar.pack_propagate(False)
+        
+        # Left side - License information
+        license_frame = tk.Frame(status_bar, bg=self.colors['bg_secondary'])
+        license_frame.pack(side=tk.LEFT, padx=15, pady=8)
+        
+        license_icon = tk.Label(
+            license_frame,
+            text="🔑",
+            font=('Segoe UI', 12),
+            bg=self.colors['bg_secondary'],
+            fg=self.colors['primary']
+        )
+        license_icon.pack(side=tk.LEFT, padx=(0, 8))
+        
+        self.status_bar_license_label = tk.Label(
+            license_frame,
+            text=self._format_license_status(),
+            font=('Segoe UI', 10),
+            bg=self.colors['bg_secondary'],
+            fg=self.colors['fg'],
+            anchor=tk.W
+        )
+        self.status_bar_license_label.pack(side=tk.LEFT)
+        
+        # Right side - Application status
+        app_status_frame = tk.Frame(status_bar, bg=self.colors['bg_secondary'])
+        app_status_frame.pack(side=tk.RIGHT, padx=15, pady=8)
+        
+        self.status_bar_app_label = tk.Label(
+            app_status_frame,
+            text="Ready",
+            font=('Segoe UI', 10),
+            bg=self.colors['bg_secondary'],
+            fg=self.colors['text_muted'],
+            anchor=tk.E
+        )
+        self.status_bar_app_label.pack(side=tk.RIGHT)
         
     def create_dashboard_tab(self):
         """Create dashboard tab"""
@@ -655,12 +718,33 @@ class ModernGUI:
         # Accounts Department section
         accounts_section = self.create_section(scrollable_frame, "Accounts Department")
         
-        self.create_labeled_entry(
+        tk.Label(
             accounts_section,
-            "Email Address:",
-            'accounts_email',
-            self.config.get('accounts_department', {}).get('email', '')
+            text="Email Addresses (one per line):",
+            font=('Arial', 10),
+            bg=self.colors['light_bg']
+        ).pack(anchor=tk.W, pady=(10, 5))
+        
+        # Support both old format (email) and new format (emails list)
+        accounts_dept_config = self.config.get('accounts_department', {})
+        accounts_emails = accounts_dept_config.get('emails', [])
+        if not accounts_emails:
+            # Backward compatibility: check for single 'email' field
+            single_email = accounts_dept_config.get('email', '')
+            if single_email:
+                accounts_emails = [single_email]
+        
+        accounts_text = '\n'.join(accounts_emails)
+        self.accounts_emails_text = tk.Text(
+            accounts_section,
+            height=5,
+            font=('Arial', 10),
+            bg='white',
+            relief=tk.SOLID,
+            bd=1
         )
+        self.accounts_emails_text.pack(fill=tk.X, padx=10, pady=5)
+        self.accounts_emails_text.insert('1.0', accounts_text)
         
         # Processing Options section
         options_section = self.create_section(scrollable_frame, "Processing Options")
@@ -995,7 +1079,7 @@ class ModernGUI:
                     'emails': [e.strip() for e in self.commercial_emails_text.get('1.0', tk.END).strip().split('\n') if e.strip()]
                 },
                 'accounts_department': {
-                    'email': self.config_vars['accounts_email'].get()
+                    'emails': [e.strip() for e in self.accounts_emails_text.get('1.0', tk.END).strip().split('\n') if e.strip()]
                 },
                 'mark_as_read': self.mark_as_read_var.get(),
                 'mark_unmatched_as_read': self.mark_unmatched_var.get(),
@@ -1513,6 +1597,9 @@ class ModernGUI:
         if self.is_running:
             return
         
+        if not self._ensure_license_valid():
+            return
+        
         # Check if config exists
         if not os.path.exists(self.config_path):
             messagebox.showerror("Error", "Configuration file not found!\nPlease configure settings first.")
@@ -1558,6 +1645,10 @@ class ModernGUI:
         interval = self.config.get('check_interval', 60)
         while self.is_running:
             try:
+                if not self._ensure_license_valid():
+                    self.root.after(0, self.stop_router)
+                    return
+                
                 self.router.run_once()
                 # Update UI from main thread
                 self.root.after(0, self.update_last_check_time)
@@ -1580,6 +1671,9 @@ class ModernGUI:
                     self.root.after(0, lambda: messagebox.showerror("Error", "Configuration file not found!"))
                     return
                 
+                if not self._ensure_license_valid():
+                    return
+                
                 router = EmailRouter(config_path=self.config_path)
                 router.run_once()
                 self.root.after(0, self.update_last_check_time)
@@ -1596,6 +1690,7 @@ class ModernGUI:
         self.update_failed_count()
         # This will be called periodically to update status
         self.root.after(5000, self.update_status)
+        self._update_license_badge()
     
     def update_failed_count(self):
         """Update failed emails count"""
@@ -1620,12 +1715,86 @@ class ModernGUI:
         except Exception as e:
             logger.error(f"Error updating failed count: {e}")
     
+    def _format_license_status(self):
+        """Human readable license text for header badge"""
+        if self.license_status_message:
+            return self.license_status_message
+        if self.license_context and getattr(self.license_context, "expires_at", None):
+            local_expiry = self.license_context.expires_at.astimezone()
+            formatted = local_expiry.strftime("%Y-%m-%d %H:%M")
+            return f"License valid until {formatted}"
+        return "License status: pending validation"
+    
+    def _update_license_badge(self):
+        """Refresh the license status text in the header and status bar"""
+        license_text = self._format_license_status()
+        if hasattr(self, 'license_label'):
+            try:
+                self.license_label.config(text=license_text)
+            except Exception:
+                pass
+        # Update status bar license info
+        if hasattr(self, 'status_bar_license_label'):
+            try:
+                self.status_bar_license_label.config(text=license_text)
+            except Exception:
+                pass
+
+    def _update_app_status(self, message: str):
+        """Update the status message shown on the status bar"""
+        if hasattr(self, 'status_bar_app_label'):
+            try:
+                self.status_bar_app_label.config(text=message)
+            except Exception:
+                pass
+    
+    def _ensure_license_valid(self):
+        """Run license validation and show message on failure"""
+        try:
+            context = LicenseManager().ensure_valid_license()
+            self.license_context = context
+            self.license_status_message = None
+            self._update_license_badge()
+            self._update_app_status("License valid")
+            return True
+        except LicenseError as exc:
+            logger.error("License validation failed: %s", exc)
+            self.license_context = None
+            self.license_status_message = self._format_license_error(exc)
+            self._update_license_badge()
+            self._update_app_status("License error")
+            self._show_license_error(exc)
+            return False
+    
+    def _show_license_error(self, exc: LicenseError):
+        """Display license error in UI thread"""
+        message = self._format_license_error(exc)
+        try:
+            if threading.current_thread() is threading.main_thread():
+                messagebox.showerror("License Error", message)
+            else:
+                self.root.after(
+                    0, lambda: messagebox.showerror("License Error", message)
+                )
+        except Exception:
+            print(message)
+    
+    def _format_license_error(self, exc: LicenseError) -> str:
+        """Create user friendly error string"""
+        message = str(exc).strip() or "License validation failed"
+        if "expired" in message.lower():
+            return "License Expired"
+        return message
+    
     def retry_failed_emails(self):
         """Retry processing failed emails"""
         def run_retry():
             try:
                 if not os.path.exists(self.config_path):
                     self.root.after(0, lambda: messagebox.showerror("Error", "Configuration file not found!"))
+                    return
+                
+                if not self._ensure_license_valid():
                     return
                 
                 router = EmailRouter(config_path=self.config_path)
@@ -1642,9 +1811,29 @@ class ModernGUI:
 
 def main():
     """Main entry point"""
+    try:
+        license_ctx = LicenseManager().ensure_valid_license()
+    except LicenseError as exc:
+        _display_license_error(exc)
+        return
+    
     root = tk.Tk()
-    app = ModernGUI(root)
+    app = ModernGUI(root, license_context=license_ctx)
     root.mainloop()
+
+
+def _display_license_error(exc: LicenseError) -> None:
+    """Show a blocking license error dialogue before exiting"""
+    message = str(exc).strip() or "License validation failed"
+    if "expired" in message.lower():
+        message = "License Expired"
+    try:
+        temp_root = tk.Tk()
+        temp_root.withdraw()
+        messagebox.showerror("License Error", message)
+        temp_root.destroy()
+    except Exception:
+        print(message)
 
 
 if __name__ == '__main__':

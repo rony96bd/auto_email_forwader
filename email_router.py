@@ -24,6 +24,8 @@ import re
 import os
 from typing import List, Dict, Optional
 
+from license_manager import LicenseError, LicenseManager
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -287,7 +289,15 @@ class EmailRouter:
         try:
             # Get recipients
             insurance_companies = rule.get('forward_to', [])
-            accounts_dept = self.config.get('accounts_department', {}).get('email')
+            accounts_dept_config = self.config.get('accounts_department', {})
+            
+            # Support both old format (email) and new format (emails list)
+            accounts_dept_emails = accounts_dept_config.get('emails', [])
+            if not accounts_dept_emails:
+                # Backward compatibility: check for single 'email' field
+                single_email = accounts_dept_config.get('email')
+                if single_email:
+                    accounts_dept_emails = [single_email]
             
             if not insurance_companies:
                 logger.warning("No insurance companies specified in rule")
@@ -301,12 +311,11 @@ class EmailRouter:
             forward_msg['From'] = self.config['email']['address']
             forward_msg['To'] = ', '.join(insurance_companies)
             
-            # Add CC to Accounts Department
-            if accounts_dept:
-                forward_msg['Cc'] = accounts_dept
-                recipients = insurance_companies + [accounts_dept]
-            else:
-                recipients = insurance_companies
+            # Add CC to Accounts Department (multiple emails supported)
+            recipients = list(insurance_companies)
+            if accounts_dept_emails:
+                forward_msg['Cc'] = ', '.join(accounts_dept_emails)
+                recipients.extend(accounts_dept_emails)
             
             # Original subject with FWD prefix if not already there
             original_subject = email_msg.get('Subject', 'No Subject')
@@ -510,6 +519,13 @@ def main():
     args = parser.parse_args()
     
     try:
+        # Enforce license validation before starting the core workflow.
+        license_context = LicenseManager().ensure_valid_license()
+        logger.info(
+            "License validated. Expires at %s",
+            license_context.expires_at.isoformat(),
+        )
+
         router = EmailRouter(config_path=args.config)
         
         if args.once:
@@ -517,6 +533,10 @@ def main():
         else:
             router.run_continuous(interval=args.interval)
             
+    except LicenseError as exc:
+        logger.error("License validation failed: %s", exc)
+        print("License Expired" if "expired" in str(exc).lower() else str(exc))
+        return 2
     except Exception as e:
         logger.error(f"Fatal error: {e}")
         return 1
