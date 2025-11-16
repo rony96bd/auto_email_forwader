@@ -23,6 +23,8 @@ from pathlib import Path
 import re
 import os
 from typing import List, Dict, Optional
+import poplib
+poplib._MAXLINE = 1000000
 
 from license_manager import LicenseError, LicenseManager
 
@@ -148,6 +150,22 @@ class EmailRouter:
             return mail
         except Exception as e:
             logger.error(f"Failed to connect to IMAP server: {e}")
+            raise
+
+    def connect_pop3(self):
+        """Connect to POP3 server for reading emails"""
+        try:
+            pop3_server = self.config['email'].get('pop3_server', self.config['email'].get('imap_server'))
+            pop3_port = self.config['email'].get('pop3_port', 995)
+            email_address = self.config['email']['address']
+            password = self.config['email']['password']
+            mail = poplib.POP3_SSL(pop3_server, pop3_port)
+            mail.user(email_address)
+            mail.pass_(password)
+            logger.info("Successfully connected to POP3 server")
+            return mail
+        except Exception as e:
+            logger.error(f"Failed to connect to POP3 server: {e}")
             raise
     
     def connect_smtp(self):
@@ -303,19 +321,54 @@ class EmailRouter:
                 logger.warning("No insurance companies specified in rule")
                 return
             
+            # Get Commercial Department emails to filter them out (prevent loop)
+            commercial_emails = self.config.get('commercial_department', {}).get('emails', [])
+            from_addr = email_msg.get('From', '').lower()
+            
+            # Filter out Commercial Department emails from recipients to prevent forwarding back
+            def is_commercial_email(email_addr):
+                """Check if an email address belongs to Commercial Department"""
+                email_lower = email_addr.lower()
+                for comm_email in commercial_emails:
+                    if comm_email.lower() in email_lower or email_lower in comm_email.lower():
+                        return True
+                return False
+            
+            # Filter insurance_companies - remove Commercial Department emails
+            filtered_insurance_companies = [
+                email for email in insurance_companies 
+                if not is_commercial_email(email)
+            ]
+            
+            # Filter accounts_dept_emails - remove Commercial Department emails
+            filtered_accounts_dept_emails = [
+                email for email in accounts_dept_emails 
+                if not is_commercial_email(email)
+            ]
+            
+            # If all recipients were filtered out, log warning and return
+            if not filtered_insurance_companies:
+                logger.warning(f"All recipients filtered out (were Commercial Department emails). Skipping forward to prevent loop.")
+                return
+            
+            # Log if any emails were filtered
+            removed_count = len(insurance_companies) - len(filtered_insurance_companies)
+            if removed_count > 0:
+                logger.info(f"Filtered out {removed_count} Commercial Department email(s) from recipients to prevent loop")
+            
             # Connect to SMTP
             smtp = self.connect_smtp()
             
             # Create forwarded message
             forward_msg = MIMEMultipart()
             forward_msg['From'] = self.config['email']['address']
-            forward_msg['To'] = ', '.join(insurance_companies)
+            forward_msg['To'] = ', '.join(filtered_insurance_companies)
             
             # Add CC to Accounts Department (multiple emails supported)
-            recipients = list(insurance_companies)
-            if accounts_dept_emails:
-                forward_msg['Cc'] = ', '.join(accounts_dept_emails)
-                recipients.extend(accounts_dept_emails)
+            recipients = list(filtered_insurance_companies)
+            if filtered_accounts_dept_emails:
+                forward_msg['Cc'] = ', '.join(filtered_accounts_dept_emails)
+                recipients.extend(filtered_accounts_dept_emails)
             
             # Original subject with FWD prefix if not already there
             original_subject = email_msg.get('Subject', 'No Subject')
@@ -360,10 +413,10 @@ Subject: {original_subject}
             
             smtp.quit()
             
-            logger.info(f"Successfully forwarded email to: {', '.join(insurance_companies)}")
+            logger.info(f"Successfully forwarded email to: {', '.join(filtered_insurance_companies)}")
             
-            # Log the routing action
-            self.log_routing_action(email_msg, rule, insurance_companies)
+            # Log the routing action (use filtered recipients)
+            self.log_routing_action(email_msg, rule, filtered_insurance_companies)
             
         except Exception as e:
             logger.error(f"Error forwarding email: {e}")
@@ -383,102 +436,140 @@ Subject: {original_subject}
             f.write(json.dumps(log_entry, ensure_ascii=False) + '\n')
     
     def process_inbox(self, include_read=False):
-        """Process incoming emails in inbox
-        
-        Args:
-            include_read: If True, also process read emails that haven't been successfully forwarded
-        """
-        try:
-            mail = self.connect_imap()
-            mail.select('INBOX')
-            
-            # Load failed emails for retry
-            failed_emails = self.load_failed_emails()
-            
-            # Search for unread emails
-            status, messages = mail.search(None, 'UNSEEN')
-            
-            if status != 'OK':
-                logger.error("Failed to search emails")
-                return
-            
-            email_ids = messages[0].split()
-            logger.info(f"Found {len(email_ids)} unread emails")
-            
-            # Always retry failed emails (even if they are read)
-            if failed_emails:
-                status_all, messages_all = mail.search(None, 'ALL')
-                if status_all == 'OK':
-                    all_email_ids = messages_all[0].split()
-                    # Add failed emails that are not in unread list
-                    for email_id in all_email_ids:
-                        email_id_str = email_id.decode()
-                        if email_id_str in failed_emails and email_id_str not in email_ids:
-                            email_ids.append(email_id)
-                    if failed_emails:
-                        logger.info(f"Retrying {len(failed_emails)} previously failed emails")
-            
-            for email_id in email_ids:
-                email_id_str = email_id.decode()
+        """Process incoming emails in inbox (IMAP or POP3 selectable by config)"""
+        protocol = self.config['email'].get('protocol', 'imap').lower()
+        if protocol == 'pop3':
+            try:
+                mail = self.connect_pop3()
+                # Retrieve all messages
+                resp, items, octets = mail.list()
+                logger.info(f"POP3 found {len(items)} total emails.")
+                for i in range(1, len(items)+1):
+                    # Get unique id for POP3 message (to avoid re-processing)
+                    try:
+                        resp, uidl_data, _ = mail.uidl(i)
+                        uid = uidl_data.decode().split()[-1]
+                    except Exception:
+                        uid = str(i)
+                    if uid in self.processed_emails:
+                        continue
+                    try:
+                        resp, lines, octets = mail.retr(i)
+                        msg_content = b"\r\n".join(lines)
+                        email_msg = email.message_from_bytes(msg_content)
+                        logger.info(f"Processing POP3 email: {email_msg.get('Subject', 'No Subject')}")
+                        rule = self.find_matching_rule(email_msg)
+                        if rule:
+                            try:
+                                self.forward_email(email_msg, rule)
+                                self.save_processed_email(uid)
+                            except Exception as forward_error:
+                                logger.error(f"Failed to forward POP3 email {uid}: {forward_error}")
+                                self.save_failed_email(uid, str(forward_error))
+                                continue
+                        else:
+                            logger.info(f"No routing rule matched for POP3 email: {email_msg.get('Subject')}")
+                        # Mark as 'read' equivalent not possible in POP3
+                    except Exception as e:
+                        logger.error(f"Error processing POP3 email {uid}: {e}")
+                        continue
+                mail.quit()
+            except Exception as e:
+                logger.error(f"Error processing POP3 inbox: {e}")
+                raise
+        else:
+            # Default: use IMAP logic
+            try:
+                mail = self.connect_imap()
+                mail.select('INBOX')
                 
-                # Skip if already processed successfully
-                if email_id_str in self.processed_emails:
-                    continue
+                # Load failed emails for retry
+                failed_emails = self.load_failed_emails()
                 
-                # Process failed emails even if they are read
-                is_failed_email = email_id_str in failed_emails
+                # Search for unread emails
+                status, messages = mail.search(None, 'UNSEEN')
                 
-                try:
-                    # Fetch email
-                    status, msg_data = mail.fetch(email_id, '(RFC822)')
+                if status != 'OK':
+                    logger.error("Failed to search emails")
+                    return
+                
+                email_ids = messages[0].split()
+                logger.info(f"Found {len(email_ids)} unread emails")
+                
+                # Always retry failed emails (even if they are read)
+                if failed_emails:
+                    status_all, messages_all = mail.search(None, 'ALL')
+                    if status_all == 'OK':
+                        all_email_ids = messages_all[0].split()
+                        # Add failed emails that are not in unread list
+                        for email_id in all_email_ids:
+                            email_id_str = email_id.decode()
+                            if email_id_str in failed_emails and email_id_str not in email_ids:
+                                email_ids.append(email_id)
+                        if failed_emails:
+                            logger.info(f"Retrying {len(failed_emails)} previously failed emails")
+                
+                for email_id in email_ids:
+                    email_id_str = email_id.decode()
                     
-                    if status != 'OK':
-                        logger.error(f"Failed to fetch email {email_id_str}")
+                    # Skip if already processed successfully
+                    if email_id_str in self.processed_emails:
                         continue
                     
-                    # Parse email
-                    email_msg = email.message_from_bytes(msg_data[0][1])
+                    # Process failed emails even if they are read
+                    is_failed_email = email_id_str in failed_emails
                     
-                    logger.info(f"Processing email: {email_msg.get('Subject', 'No Subject')}")
-                    
-                    # Find matching rule
-                    rule = self.find_matching_rule(email_msg)
-                    
-                    if rule:
-                        # Forward email (only mark as processed if successful)
-                        try:
-                            self.forward_email(email_msg, rule)
-                            
-                            # Only mark as processed AFTER successful forward
-                            self.save_processed_email(email_id_str)
-                            
-                            # Optional: Mark as read ONLY after successful forward
-                            if self.config.get('mark_as_read', True):
-                                mail.store(email_id, '+FLAGS', '\\Seen')
-                                
-                        except Exception as forward_error:
-                            # Forward failed - don't mark as processed
-                            logger.error(f"Failed to forward email {email_id_str}: {forward_error}")
-                            # Save failed email for retry
-                            self.save_failed_email(email_id_str, str(forward_error))
-                            # Don't mark as read, so it will be retried
+                    try:
+                        # Fetch email
+                        status, msg_data = mail.fetch(email_id, '(RFC822)')
+                        
+                        if status != 'OK':
+                            logger.error(f"Failed to fetch email {email_id_str}")
                             continue
-                    else:
-                        logger.info(f"No routing rule matched for email: {email_msg.get('Subject')}")
-                        # Optionally mark as read or flag for manual review
-                        if self.config.get('mark_unmatched_as_read', False):
-                            mail.store(email_id, '+FLAGS', '\\Seen')
-                    
-                except Exception as e:
-                    logger.error(f"Error processing email {email_id_str}: {e}")
-                    continue
-            
-            mail.close()
-            mail.logout()
-            
-        except Exception as e:
-            logger.error(f"Error processing inbox: {e}")
-            raise
+                        
+                        # Parse email
+                        email_msg = email.message_from_bytes(msg_data[0][1])
+                        
+                        logger.info(f"Processing email: {email_msg.get('Subject', 'No Subject')}")
+                        
+                        # Find matching rule
+                        rule = self.find_matching_rule(email_msg)
+                        
+                        if rule:
+                            # Forward email (only mark as processed if successful)
+                            try:
+                                self.forward_email(email_msg, rule)
+                                
+                                # Only mark as processed AFTER successful forward
+                                self.save_processed_email(email_id_str)
+                                
+                                # Optional: Mark as read ONLY after successful forward
+                                if self.config.get('mark_as_read', True):
+                                    mail.store(email_id, '+FLAGS', '\\Seen')
+                                    
+                            except Exception as forward_error:
+                                # Forward failed - don't mark as processed
+                                logger.error(f"Failed to forward email {email_id_str}: {forward_error}")
+                                # Save failed email for retry
+                                self.save_failed_email(email_id_str, str(forward_error))
+                                # Don't mark as read, so it will be retried
+                                continue
+                        else:
+                            logger.info(f"No routing rule matched for email: {email_msg.get('Subject')}")
+                            # Optionally mark as read or flag for manual review
+                            if self.config.get('mark_unmatched_as_read', False):
+                                mail.store(email_id, '+FLAGS', '\\Seen')
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing email {email_id_str}: {e}")
+                        continue
+                
+                mail.close()
+                mail.logout()
+                
+            except Exception as e:
+                logger.error(f"Error processing inbox: {e}")
+                raise
     
     def run_once(self):
         """Run email processing once"""

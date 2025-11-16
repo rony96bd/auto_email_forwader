@@ -5,10 +5,15 @@
 email:
   address: "your-email@gmail.com"     # আপনার ইমেইল এড্রেস
   password: "your-app-password-here"  # Gmail App Password
-  
+  protocol: imap                      # imap অথবা pop3 
+
   # IMAP Settings (for receiving emails)
   imap_server: "imap.gmail.com"
   imap_port: 993
+
+  # POP3 Settings (for receiving emails)
+  pop3_server: "pop.gmail.com"
+  pop3_port: 995
   
   # SMTP Settings (for sending emails)
   smtp_server: "smtp.gmail.com"

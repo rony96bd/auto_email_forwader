@@ -7,9 +7,9 @@ default_rule:
 rules:
 - conditions:
     from_contains:
-    - r.ronycoc2015@gmail.com
+    - r.rony9966@gmail.com
   enabled: true
   forward_to:
-  - unoalamdangabanners@gmail.com
+  - r.ronycoc2015@gmail.com
   match_type: any
-  name: unoalamdangabanners@gmail.com Department
+  name: Rule-1

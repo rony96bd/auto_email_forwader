@@ -793,6 +793,39 @@ class ModernGUI:
         )
         save_btn.pack(pady=25)
         
+        # Protocol selection
+        protocol_frame = tk.Frame(email_section, bg=self.colors['light_bg'])
+        protocol_frame.pack(fill=tk.X, padx=10, pady=(5,2))
+        tk.Label(protocol_frame, text="Protocol:", font=('Arial', 10), bg=self.colors['light_bg'], width=30, anchor=tk.W).pack(side=tk.LEFT, padx=(0,10))
+        self.protocol_var = tk.StringVar(value=self.config.get('email', {}).get('protocol', 'imap'))
+        protocol_combo = ttk.Combobox(protocol_frame, textvariable=self.protocol_var, values=['imap', 'pop3'], font=('Arial', 10), width=18, state='readonly')
+        protocol_combo.pack(side=tk.LEFT, padx=5)
+
+        # This logic will show IMAP or POP3 settings dynamically
+        def toggle_protocol_fields(*args):
+            protocol = self.protocol_var.get().lower()
+            if protocol == 'pop3':
+                self.imap_fields_frame.pack_forget()
+                self.pop3_fields_frame.pack(fill=tk.X, padx=10, pady=2)
+            else:
+                self.pop3_fields_frame.pack_forget()
+                self.imap_fields_frame.pack(fill=tk.X, padx=10, pady=2)
+        self.protocol_var.trace_add('write', toggle_protocol_fields)
+
+        # IMAP fields
+        self.imap_fields_frame = tk.Frame(email_section, bg=self.colors['light_bg'])
+        self.create_labeled_entry(self.imap_fields_frame, "IMAP Server:", 'imap_server', self.config.get('email', {}).get('imap_server', 'imap.gmail.com'))
+        self.create_labeled_entry(self.imap_fields_frame, "IMAP Port:", 'imap_port', str(self.config.get('email', {}).get('imap_port', 993)))
+        # POP3 fields
+        self.pop3_fields_frame = tk.Frame(email_section, bg=self.colors['light_bg'])
+        self.create_labeled_entry(self.pop3_fields_frame, "POP3 Server:", 'pop3_server', self.config.get('email', {}).get('pop3_server', 'pop.gmail.com'))
+        self.create_labeled_entry(self.pop3_fields_frame, "POP3 Port:", 'pop3_port', str(self.config.get('email', {}).get('pop3_port', 995)))
+        # Initial view toggle
+        if self.protocol_var.get().lower() == 'pop3':
+            self.pop3_fields_frame.pack(fill=tk.X, padx=10, pady=2)
+        else:
+            self.imap_fields_frame.pack(fill=tk.X, padx=10, pady=2)
+        
     def create_rules_tab(self):
         """Create rules management tab"""
         rules_frame = ttk.Frame(self.notebook)
@@ -1070,8 +1103,11 @@ class ModernGUI:
                 'email': {
                     'address': self.config_vars['email_address'].get(),
                     'password': password,
+                    'protocol': self.protocol_var.get(),
                     'imap_server': self.config_vars['imap_server'].get(),
                     'imap_port': int(self.config_vars['imap_port'].get() or 993),
+                    'pop3_server': self.config_vars['pop3_server'].get(),
+                    'pop3_port': int(self.config_vars['pop3_port'].get() or 995),
                     'smtp_server': self.config_vars['smtp_server'].get(),
                     'smtp_port': int(self.config_vars['smtp_port'].get() or 587)
                 },
