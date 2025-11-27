@@ -1,7 +1,7 @@
 # Email Routing System - Complete Documentation
 # স্বয়ংক্রিয় ইমেইল রাউটিং সিস্টেম - সম্পূর্ণ ডকুমেন্টেশন
 # EXE জেনারেট করা জন্য pyinstaller --name Email_Forwarder --onefile --noconsole --add-data "email_router.py;." --add-data "gui_app.py;." --add-data "license_manager.py;." gui_app.py
-
+# ফাইল চেঞ্জ হয়ে Hash Generate এর জন্য: python generate_hashes.py
 ---
 
 ## 📋 Table of Contents / বিষয়সূচি
@@ -484,6 +484,22 @@ smtp_port: 465  # Most custom domains use SSL (port 465)
 ```
 
 **Important:** Port 465 uses SSL/TLS directly, while port 587 uses STARTTLS. The system automatically detects this.
+
+#### POP3 Specific Settings
+
+If you switch `email.protocol: pop3`, configure the POP3 block as well:
+
+```yaml
+email:
+  pop3_server: "pop.gmail.com"
+  pop3_port: 995
+  pop3_use_ssl: true          # implicit TLS (POP3_SSL) – default for port 995
+  pop3_use_starttls: false    # set true only when the provider requires STLS on port 110
+```
+
+- When your provider only offers plain port 110, set `pop3_port: 110` and `pop3_use_ssl: false`.  
+- If the server expects STARTTLS/STLS on port 110, keep `pop3_use_ssl: false` and set `pop3_use_starttls: true`.  
+- Never enable both SSL and STARTTLS simultaneously—the app will prefer SSL and ignore the STARTTLS flag.
 
 ### Commercial Department
 

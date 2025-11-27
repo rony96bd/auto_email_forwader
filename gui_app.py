@@ -817,9 +817,62 @@ class ModernGUI:
         self.create_labeled_entry(self.imap_fields_frame, "IMAP Server:", 'imap_server', self.config.get('email', {}).get('imap_server', 'imap.gmail.com'))
         self.create_labeled_entry(self.imap_fields_frame, "IMAP Port:", 'imap_port', str(self.config.get('email', {}).get('imap_port', 993)))
         # POP3 fields
+        email_settings = self.config.get('email', {})
         self.pop3_fields_frame = tk.Frame(email_section, bg=self.colors['light_bg'])
-        self.create_labeled_entry(self.pop3_fields_frame, "POP3 Server:", 'pop3_server', self.config.get('email', {}).get('pop3_server', 'pop.gmail.com'))
-        self.create_labeled_entry(self.pop3_fields_frame, "POP3 Port:", 'pop3_port', str(self.config.get('email', {}).get('pop3_port', 995)))
+        self.create_labeled_entry(
+            self.pop3_fields_frame,
+            "POP3 Server:",
+            'pop3_server',
+            email_settings.get('pop3_server', 'pop.gmail.com')
+        )
+        self.create_labeled_entry(
+            self.pop3_fields_frame,
+            "POP3 Port:",
+            'pop3_port',
+            str(email_settings.get('pop3_port', 995))
+        )
+
+        # POP3 security options
+        default_pop3_ssl = email_settings.get('pop3_use_ssl')
+        if default_pop3_ssl is None:
+            default_pop3_ssl = email_settings.get('pop3_port', 995) == 995
+        self.pop3_ssl_var = tk.BooleanVar(value=default_pop3_ssl)
+        self.pop3_starttls_var = tk.BooleanVar(value=email_settings.get('pop3_use_starttls', False))
+
+        ssl_checkbox = tk.Checkbutton(
+            self.pop3_fields_frame,
+            text="Use SSL (POP3_SSL / port 995)",
+            variable=self.pop3_ssl_var,
+            font=('Arial', 10),
+            bg=self.colors['light_bg']
+        )
+        ssl_checkbox.pack(anchor=tk.W, pady=3, padx=15)
+
+        starttls_checkbox = tk.Checkbutton(
+            self.pop3_fields_frame,
+            text="Use STARTTLS (STLS) after connecting",
+            variable=self.pop3_starttls_var,
+            font=('Arial', 10),
+            bg=self.colors['light_bg']
+        )
+        starttls_checkbox.pack(anchor=tk.W, pady=3, padx=15)
+
+        helper_label = tk.Label(
+            self.pop3_fields_frame,
+            text="💡 For port 110: disable SSL. Enable STARTTLS only if the server supports STLS.",
+            font=('Arial', 9),
+            bg=self.colors['light_bg'],
+            fg=self.colors['text_muted'],
+            wraplength=600,
+            justify=tk.LEFT
+        )
+        helper_label.pack(anchor=tk.W, padx=15, pady=(0, 5))
+
+        def handle_pop3_ssl_toggle(*_):
+            if self.pop3_ssl_var.get():
+                self.pop3_starttls_var.set(False)
+
+        self.pop3_ssl_var.trace_add('write', handle_pop3_ssl_toggle)
         # Initial view toggle
         if self.protocol_var.get().lower() == 'pop3':
             self.pop3_fields_frame.pack(fill=tk.X, padx=10, pady=2)
@@ -1108,6 +1161,11 @@ class ModernGUI:
                     'imap_port': int(self.config_vars['imap_port'].get() or 993),
                     'pop3_server': self.config_vars['pop3_server'].get(),
                     'pop3_port': int(self.config_vars['pop3_port'].get() or 995),
+                    'pop3_use_ssl': bool(getattr(self, 'pop3_ssl_var', tk.BooleanVar(value=True)).get()),
+                    'pop3_use_starttls': bool(
+                        getattr(self, 'pop3_starttls_var', tk.BooleanVar(value=False)).get()
+                        if not getattr(self, 'pop3_ssl_var', tk.BooleanVar(value=True)).get() else False
+                    ),
                     'smtp_server': self.config_vars['smtp_server'].get(),
                     'smtp_port': int(self.config_vars['smtp_port'].get() or 587)
                 },

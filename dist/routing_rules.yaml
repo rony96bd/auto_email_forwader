@@ -1,0 +1,9 @@
+rules:
+- conditions:
+    from_contains:
+    - r.ronycoc2015@gmail.com
+  enabled: true
+  forward_to:
+  - unoofficealamdanga@gmail.com
+  match_type: any
+  name: From r.ronycoc2015@gmail.com to unoofficealamdanga@gmail.com

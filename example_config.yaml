@@ -14,6 +14,8 @@ email:
   # POP3 Settings (for receiving emails)
   pop3_server: "pop.gmail.com"
   pop3_port: 995
+  pop3_use_ssl: true            # true = POP3_SSL (default port 995)
+  pop3_use_starttls: false      # true = plain connect + STLS (port 110)
   
   # SMTP Settings (for sending emails)
   smtp_server: "smtp.gmail.com"

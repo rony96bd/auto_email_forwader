@@ -155,11 +155,35 @@ class EmailRouter:
     def connect_pop3(self):
         """Connect to POP3 server for reading emails"""
         try:
-            pop3_server = self.config['email'].get('pop3_server', self.config['email'].get('imap_server'))
-            pop3_port = self.config['email'].get('pop3_port', 995)
-            email_address = self.config['email']['address']
-            password = self.config['email']['password']
-            mail = poplib.POP3_SSL(pop3_server, pop3_port)
+            email_settings = self.config['email']
+            pop3_server = email_settings.get('pop3_server', email_settings.get('imap_server'))
+            pop3_port = email_settings.get('pop3_port', 995)
+            email_address = email_settings['address']
+            password = email_settings['password']
+
+            use_ssl = email_settings.get('pop3_use_ssl')
+            if use_ssl is None:
+                use_ssl = pop3_port == 995
+            use_starttls = email_settings.get('pop3_use_starttls', False)
+            if use_ssl and use_starttls:
+                logger.warning("POP3 config requested both SSL and STARTTLS; STARTTLS will be ignored.")
+                use_starttls = False
+
+            if use_ssl:
+                logger.info(f"Connecting to POP3 server {pop3_server}:{pop3_port} using implicit SSL")
+                mail = poplib.POP3_SSL(pop3_server, pop3_port)
+            else:
+                logger.info(f"Connecting to POP3 server {pop3_server}:{pop3_port} without SSL")
+                mail = poplib.POP3(pop3_server, pop3_port)
+                if use_starttls:
+                    try:
+                        logger.info("Upgrading POP3 connection via STLS (STARTTLS)")
+                        mail.stls()
+                    except poplib.error_proto as stls_error:
+                        mail.quit()
+                        logger.error(f"Failed to upgrade POP3 connection via STLS: {stls_error}")
+                        raise
+
             mail.user(email_address)
             mail.pass_(password)
             logger.info("Successfully connected to POP3 server")
